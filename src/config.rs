@@ -29,7 +29,9 @@ impl Config {
     }
 
     pub fn load() -> Result<Self> {
-        let Some(path) = Self::path() else { return Ok(Self::default()) };
+        let Some(path) = Self::path() else {
+            return Ok(Self::default());
+        };
         if !path.exists() {
             return Ok(Self::default());
         }

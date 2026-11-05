@@ -62,7 +62,10 @@ struct TagModel {
 
 impl Ollama {
     pub fn new(host: &str) -> Self {
-        Self { http: reqwest::Client::new(), host: host.trim_end_matches('/').to_string() }
+        Self {
+            http: reqwest::Client::new(),
+            host: host.trim_end_matches('/').to_string(),
+        }
     }
 
     /// Startup check: server reachable and model pulled.
@@ -80,7 +83,11 @@ impl Ollama {
             })?
             .error_for_status()?;
         let tags: Tags = resp.json().await.context("unexpected /api/tags response")?;
-        let want = if model.contains(':') { model.to_string() } else { format!("{model}:latest") };
+        let want = if model.contains(':') {
+            model.to_string()
+        } else {
+            format!("{model}:latest")
+        };
         if !tags.models.iter().any(|m| m.name == want) {
             bail!("Model '{model}' isn't installed.\n  Run: ollama pull {model}");
         }
@@ -154,7 +161,12 @@ impl Ollama {
         }
 
         Ok(Turn {
-            message: Message { role: "assistant".into(), content, tool_calls, tool_name: None },
+            message: Message {
+                role: "assistant".into(),
+                content,
+                tool_calls,
+                tool_name: None,
+            },
             usage,
         })
     }

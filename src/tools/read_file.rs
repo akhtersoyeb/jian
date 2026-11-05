@@ -10,10 +10,16 @@ pub fn run(ctx: &Ctx, args: &Value) -> Result<String> {
     let path = ctx.resolve(str_arg(args, "path")?)?;
     let meta = std::fs::metadata(&path)?;
     if meta.is_dir() {
-        bail!("'{}' is a directory; use list_dir instead", ctx.display(&path));
+        bail!(
+            "'{}' is a directory; use list_dir instead",
+            ctx.display(&path)
+        );
     }
     if meta.len() > MAX_FILE_BYTES {
-        bail!("file is too large to read ({} bytes); use grep to find the part you need", meta.len());
+        bail!(
+            "file is too large to read ({} bytes); use grep to find the part you need",
+            meta.len()
+        );
     }
     let bytes = std::fs::read(&path)?;
     if bytes[..bytes.len().min(8192)].contains(&0u8) {

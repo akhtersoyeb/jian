@@ -22,16 +22,21 @@ impl Message {
         Self::plain("user", s)
     }
     fn plain(role: &str, s: impl Into<String>) -> Self {
-        Self { role: role.into(), content: s.into(), tool_calls: vec![], tool_name: None }
+        Self {
+            role: role.into(),
+            content: s.into(),
+            tool_calls: vec![],
+            tool_name: None,
+        }
     }
     pub fn tool(name: impl Into<String>, content: impl Into<String>) -> Self {
-            Self {
-                role: "tool".into(),
-                content: content.into(),
-                tool_calls: vec![],
-                tool_name: Some(name.into()),
-            }
+        Self {
+            role: "tool".into(),
+            content: content.into(),
+            tool_calls: vec![],
+            tool_name: Some(name.into()),
         }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

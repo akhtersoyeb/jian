@@ -35,7 +35,9 @@ pub fn run(ctx: &Ctx, args: &Value) -> Result<String> {
         if entry.metadata().map_or(true, |m| m.len() > MAX_FILE_BYTES) {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(entry.path()) else { continue }; // skips non-UTF8
+        let Ok(text) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        }; // skips non-UTF8
         if text.contains('\0') {
             continue;
         }
@@ -64,7 +66,9 @@ pub fn run(ctx: &Ctx, args: &Value) -> Result<String> {
     }
     out.push_str(&format!("[{matches} matches in {files} files"));
     if truncated {
-        out.push_str(&format!("; stopped at {MAX_MATCHES}, refine your pattern, path or glob"));
+        out.push_str(&format!(
+            "; stopped at {MAX_MATCHES}, refine your pattern, path or glob"
+        ));
     }
     out.push(']');
     Ok(out)

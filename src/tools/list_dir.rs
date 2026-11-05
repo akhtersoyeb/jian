@@ -8,7 +8,10 @@ const MAX_ENTRIES: usize = 200;
 pub fn run(ctx: &Ctx, args: &Value) -> Result<String> {
     let path = ctx.resolve(opt_str(args, "path").unwrap_or("."))?;
     if !path.is_dir() {
-        bail!("'{}' is not a directory; use read_file for files", ctx.display(&path));
+        bail!(
+            "'{}' is not a directory; use read_file for files",
+            ctx.display(&path)
+        );
     }
     let depth = opt_u64(args, "depth").unwrap_or(1).clamp(1, 3) as usize;
 
@@ -33,14 +36,20 @@ pub fn run(ctx: &Ctx, args: &Value) -> Result<String> {
         shown += 1;
         let indent = "  ".repeat(entry.depth() - 1);
         let name = entry.file_name().to_string_lossy();
-        let slash = if entry.file_type().map_or(false, |t| t.is_dir()) { "/" } else { "" };
+        let slash = if entry.file_type().map_or(false, |t| t.is_dir()) {
+            "/"
+        } else {
+            ""
+        };
         out.push_str(&format!("{indent}{name}{slash}\n"));
     }
     if shown == 0 {
         return Ok("(empty directory)".into());
     }
     if hidden_count > 0 {
-        out.push_str(&format!("... and {hidden_count} more entries (list a subdirectory or lower the depth)\n"));
+        out.push_str(&format!(
+            "... and {hidden_count} more entries (list a subdirectory or lower the depth)\n"
+        ));
     }
     Ok(out)
 }
