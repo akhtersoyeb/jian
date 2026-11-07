@@ -23,6 +23,7 @@ pub struct ChatRequest<'a> {
     pub think: Option<bool>,
     #[serde(skip_serializing_if = "no_tools")]
     pub tools: &'a [Value],
+        pub keep_alive: &'static str,
 }
 
 #[derive(Serialize)]

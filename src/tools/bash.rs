@@ -33,15 +33,38 @@ pub async fn run(ctx: &Ctx, command: &str, timeout_secs: u64) -> String {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true); // timeout or Ctrl-C drops the future, which kills the child
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0); // own process group, so we can kill grandchildren too
 
-    match tokio::time::timeout(Duration::from_secs(timeout_secs), cmd.output()).await {
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return format!("Error: failed to run command: {e}"),
+    };
+    // Dropped on every exit path (success, timeout, Ctrl-C): kills the whole group.
+    let _guard = KillGroup(child.id());
+
+    match tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait_with_output()).await {
         Err(_) => format!(
             "Error: command timed out after {timeout_secs}s and was killed. If it is expected to \
              take long, narrow its scope or pass a larger timeout_secs."
         ),
         Ok(Err(e)) => format!("Error: failed to run command: {e}"),
         Ok(Ok(out)) => format_output(out),
+    }
+}
+
+struct KillGroup(Option<u32>);
+
+impl Drop for KillGroup {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pid) = self.0 {
+            // SAFETY: plain syscall; ESRCH (group already gone) is fine to ignore.
+            unsafe {
+                libc::killpg(pid as libc::pid_t, libc::SIGKILL);
+            }
+        }
     }
 }
 
@@ -79,9 +102,10 @@ fn tail(s: &str) -> String {
 /// What "always allow" would cover for this command. None = never offer it.
 pub fn always_key(command: &str) -> Option<String> {
     const DENY: &[&str] = &[
-        "rm", "sudo", "dd", "mv", "chmod", "chown", "sh", "bash", "zsh", "eval", "curl", "wget",
-        "kill", "pkill", "mkfs", "shutdown", "reboot",
-    ];
+            "rm", "sudo", "dd", "mv", "chmod", "chown", "sh", "bash", "zsh", "eval", "curl", "wget",
+            "kill", "pkill", "mkfs", "shutdown", "reboot", "python", "python3", "node", "ruby",
+            "perl", "php", "env", "xargs", "find", "npx",
+        ];
     if command.chars().any(|c| ";|&<>`$\n\\".contains(c)) {
         return None; // compound command: always ask
     }
@@ -94,4 +118,21 @@ pub fn always_key(command: &str) -> Option<String> {
         Some(second) if !second.starts_with('-') => format!("{first} {second}"),
         _ => first.to_string(),
     })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn always_key_rules() {
+        assert_eq!(always_key("cargo test").as_deref(), Some("cargo test"));
+        assert_eq!(always_key("cargo test --release").as_deref(), Some("cargo test"));
+        assert_eq!(always_key("ls -la").as_deref(), Some("ls"));
+        assert_eq!(always_key("cargo test && rm -rf /"), None);
+        assert_eq!(always_key("rm -rf x"), None);
+        assert_eq!(always_key("echo $HOME"), None);
+        assert_eq!(always_key("python3 -c 'import os'"), None);
+    }
 }

@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 
 pub const MAX_OUTPUT_CHARS: usize = 8000;
 pub const MAX_FILE_BYTES: u64 = 5 * 1024 * 1024;
+pub const NAMES: [&str; 6] = ["read_file", "list_dir", "grep", "edit_file", "write_file", "bash"];
 
 #[derive(Clone)]
 pub struct Ctx {
@@ -200,47 +201,42 @@ pub fn plan(ctx: &Ctx, name: &str, args: &Value) -> Result<Option<Plan>> {
     }
 }
 
-/// Commit an approved plan. Never fails: errors become "Error: ..." text for the model.
 pub async fn apply(ctx: &Ctx, plan: &Plan) -> String {
     let out = match plan {
-        Plan::Edit {
-            path,
-            rel,
-            new,
-            count,
-            ..
-        } => match std::fs::write(path, new) {
-            Ok(()) => format!("Edited {rel}: replaced {count} occurrence(s)."),
-            Err(e) => format!("Error: could not write {rel}: {e}"),
-        },
-        Plan::Write {
-            path,
-            rel,
-            old,
-            new,
-        } => {
-            let r = match path.parent() {
-                Some(dir) => std::fs::create_dir_all(dir),
-                None => Ok(()),
-            }
-            .and_then(|_| std::fs::write(path, new));
-            match r {
-                Ok(()) => format!(
-                    "{} {rel} ({} lines).",
-                    if old.is_some() {
-                        "Overwrote"
-                    } else {
-                        "Created"
-                    },
-                    new.lines().count()
-                ),
-                Err(e) => format!("Error: could not write {rel}: {e}"),
+        Plan::Edit { path, rel, old, new, count } => {
+            if std::fs::read_to_string(path).ok().as_deref() != Some(old.as_str()) {
+                format!("Error: {rel} changed on disk after the edit was planned. Re-read the file and try again.")
+            } else {
+                match std::fs::write(path, new) {
+                    Ok(()) => format!("Edited {rel}: replaced {count} occurrence(s)."),
+                    Err(e) => format!("Error: could not write {rel}: {e}"),
+                }
             }
         }
-        Plan::Bash {
-            command,
-            timeout_secs,
-        } => bash::run(ctx, command, *timeout_secs).await,
+        Plan::Write { path, rel, old, new } => {
+            let unchanged = match old {
+                Some(o) => std::fs::read_to_string(path).ok().as_deref() == Some(o.as_str()),
+                None => !path.exists(),
+            };
+            if !unchanged {
+                format!("Error: {rel} changed on disk after the write was planned. Re-read it and try again.")
+            } else {
+                let r = match path.parent() {
+                    Some(dir) => std::fs::create_dir_all(dir),
+                    None => Ok(()),
+                }
+                .and_then(|_| std::fs::write(path, new));
+                match r {
+                    Ok(()) => format!(
+                        "{} {rel} ({} lines).",
+                        if old.is_some() { "Overwrote" } else { "Created" },
+                        new.lines().count()
+                    ),
+                    Err(e) => format!("Error: could not write {rel}: {e}"),
+                }
+            }
+        }
+        Plan::Bash { command, timeout_secs } => bash::run(ctx, command, *timeout_secs).await,
     };
     truncate(out)
 }

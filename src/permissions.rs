@@ -5,6 +5,7 @@ use std::collections::HashSet;
 #[derive(Default)]
 pub struct Permissions {
     always: HashSet<String>,
+    allow_all: bool,
 }
 
 pub enum Decision {
@@ -14,7 +15,14 @@ pub enum Decision {
 }
 
 impl Permissions {
+    pub fn new(allow_all: bool) -> Self {
+            Self { always: HashSet::new(), allow_all }
+        }
+
     pub async fn check(&mut self, plan: &Plan) -> Decision {
+        if self.allow_all {
+                    return Decision::Allow;
+                }
         let rule = plan.always_rule();
         if let Some((key, _)) = &rule {
             if self.always.contains(key) {

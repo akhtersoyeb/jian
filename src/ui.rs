@@ -53,13 +53,12 @@ pub fn reset_terminal() {
     println!("{RESET}");
 }
 
-pub fn usage_line(u: &Usage) {
-    let tps = u
-        .tokens_per_sec
-        .map(|t| format!(" · {t:.1} tok/s"))
-        .unwrap_or_default();
+pub fn usage_line(u: &Usage, num_ctx: u32) {
+    let tps = u.tokens_per_sec.map(|t| format!(" · {t:.1} tok/s")).unwrap_or_default();
+    let pct = u.prompt_tokens * 100 / num_ctx.max(1) as u64;
+    let color = if pct >= 80 { YELLOW } else { GREY };
     println!(
-        "{GREY}[{} prompt · {} generated{tps}]{RESET}",
+        "{color}[{} prompt · {} generated{tps} · ctx {pct}%]{RESET}",
         u.prompt_tokens, u.completion_tokens
     );
 }
