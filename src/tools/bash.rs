@@ -102,10 +102,10 @@ fn tail(s: &str) -> String {
 /// What "always allow" would cover for this command. None = never offer it.
 pub fn always_key(command: &str) -> Option<String> {
     const DENY: &[&str] = &[
-            "rm", "sudo", "dd", "mv", "chmod", "chown", "sh", "bash", "zsh", "eval", "curl", "wget",
-            "kill", "pkill", "mkfs", "shutdown", "reboot", "python", "python3", "node", "ruby",
-            "perl", "php", "env", "xargs", "find", "npx",
-        ];
+        "rm", "sudo", "dd", "mv", "chmod", "chown", "sh", "bash", "zsh", "eval", "curl", "wget",
+        "kill", "pkill", "mkfs", "shutdown", "reboot", "python", "python3", "node", "ruby", "perl",
+        "php", "env", "xargs", "find", "npx",
+    ];
     if command.chars().any(|c| ";|&<>`$\n\\".contains(c)) {
         return None; // compound command: always ask
     }
@@ -120,7 +120,6 @@ pub fn always_key(command: &str) -> Option<String> {
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,7 +127,10 @@ mod tests {
     #[test]
     fn always_key_rules() {
         assert_eq!(always_key("cargo test").as_deref(), Some("cargo test"));
-        assert_eq!(always_key("cargo test --release").as_deref(), Some("cargo test"));
+        assert_eq!(
+            always_key("cargo test --release").as_deref(),
+            Some("cargo test")
+        );
         assert_eq!(always_key("ls -la").as_deref(), Some("ls"));
         assert_eq!(always_key("cargo test && rm -rf /"), None);
         assert_eq!(always_key("rm -rf x"), None);

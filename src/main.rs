@@ -1,6 +1,7 @@
 mod agent;
 mod config;
 mod context;
+mod doctor;
 mod llm;
 mod permissions;
 mod tools;
@@ -14,8 +15,18 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::io::Write;
 
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Check Ollama, the model and the config, and explain how to fix problems
+    Doctor,
+}
+
 #[derive(Parser)]
-#[command(name = "jian", version, about = "Jian Code: a local coding agent for your terminal")]
+#[command(
+    name = "jian",
+    version,
+    about = "Jian Code: a local coding agent for your terminal"
+)]
 struct Cli {
     /// Ollama model to use (overrides config)
     #[arg(long, short)]
@@ -29,6 +40,9 @@ struct Cli {
     /// Auto-approve every edit and command. Dangerous: only for throwaway dirs and scripts
     #[arg(long, short = 'y')]
     yes: bool,
+
+    #[command(subcommand)]
+    command: Option<Command>,
 }
 
 const HELP: &str = "\
@@ -64,7 +78,9 @@ fn read_input(rl: &mut DefaultEditor) -> Result<Option<String>, ReadlineError> {
     loop {
         let line = match rl.readline(prompt) {
             Ok(l) => l,
-            Err(ReadlineError::Eof) => return Ok(if input.is_empty() { None } else { Some(input) }),
+            Err(ReadlineError::Eof) => {
+                return Ok(if input.is_empty() { None } else { Some(input) })
+            }
             Err(e) => return Err(e),
         };
         match line.strip_suffix('\\') {
@@ -83,22 +99,40 @@ fn read_input(rl: &mut DefaultEditor) -> Result<Option<String>, ReadlineError> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Legacy Windows consoles need ANSI processing switched on. Modern terminals already have it.
+    #[cfg(windows)]
+    let _ = crossterm::ansi_support::supports_ansi();
     let cli = Cli::parse();
     let mut cfg = config::Config::load()?;
     if let Some(m) = cli.model {
         cfg.model = m;
     }
     if let Some(h) = cli.host {
-        cfg.host = h;
+        cfg.host = config::normalize_host(&h);
+    }
+
+    // `jian doctor` runs before anything else touches the terminal or Ollama.
+    if cli.command.is_some() {
+        return doctor::run(&cfg).await;
     }
 
     // Non-interactive mode: must run before anything prints.
     let final_out = cli.prompt.as_ref().map(|_| split_stdout());
 
     let client = Ollama::new(&cfg.host);
+
     if let Err(e) = client.ensure_ready(&cfg.model).await {
         ui::error(&format!("{e}"));
         std::process::exit(1);
+    }
+
+    if let Ok(caps) = client.capabilities(&cfg.model).await {
+        if !caps.is_empty() && !caps.iter().any(|c| c == "tools") {
+            ui::error(&format!(
+                "Warning: '{}' doesn't advertise tool calling, so Jian Code may not work. Run `jian doctor`.",
+                cfg.model
+            ));
+        }
     }
 
     let ctx = tools::Ctx::new()?;

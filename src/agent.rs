@@ -48,7 +48,10 @@ pub async fn run_turn(
             let freed = context::trim_old_tool_results(history.as_mut_slice(), KEEP_RECENT);
             if freed > 0 {
                 est = tracker.estimate(history.as_slice());
-                ui::info(&format!("(trimmed ~{} KB of old tool output to save context)", freed / 1024));
+                ui::info(&format!(
+                    "(trimmed ~{} KB of old tool output to save context)",
+                    freed / 1024
+                ));
             }
         }
         let p = context::pct(est, cfg.num_ctx);
@@ -65,7 +68,9 @@ pub async fn run_turn(
             model: &cfg.model,
             messages: history.as_slice(),
             stream: true,
-            options: Options { num_ctx: cfg.num_ctx },
+            options: Options {
+                num_ctx: cfg.num_ctx,
+            },
             think: cfg.think,
             tools: &defs,
             keep_alive: "30m",
@@ -158,7 +163,10 @@ pub async fn run_turn(
 /// naming a known tool. Anything else is plain prose and is left alone.
 fn rescue_tool_call(content: &str) -> Option<ToolCall> {
     let t = content.trim();
-    let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")).unwrap_or(t);
+    let t = t
+        .strip_prefix("```json")
+        .or_else(|| t.strip_prefix("```"))
+        .unwrap_or(t);
     let t = t.strip_suffix("```").unwrap_or(t).trim();
     if !t.starts_with('{') {
         return None;
@@ -168,8 +176,18 @@ fn rescue_tool_call(content: &str) -> Option<ToolCall> {
     if !tools::NAMES.iter().any(|n| *n == name) {
         return None;
     }
-    let args = v.get("arguments").or_else(|| v.get("parameters")).cloned().unwrap_or(Value::Null);
-    Some(ToolCall { id: None, function: FunctionCall { name: name.to_string(), arguments: args } })
+    let args = v
+        .get("arguments")
+        .or_else(|| v.get("parameters"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    Some(ToolCall {
+        id: None,
+        function: FunctionCall {
+            name: name.to_string(),
+            arguments: args,
+        },
+    })
 }
 
 /// After a cancel/error, make sure every tool call in the last assistant message has a result,
@@ -189,7 +207,10 @@ pub fn repair_history(history: &mut Vec<Message>) {
         .map(|c| c.function.name.clone())
         .collect();
     for name in missing {
-        history.push(Message::tool(name, "Cancelled by the user before this ran."));
+        history.push(Message::tool(
+            name,
+            "Cancelled by the user before this ran.",
+        ));
     }
 }
 
@@ -205,7 +226,10 @@ mod tests {
         assert_eq!(c.function.arguments["pattern"], "foo");
 
         let bare = "{\"name\":\"read_file\",\"parameters\":{\"path\":\"a.rs\"}}";
-        assert_eq!(rescue_tool_call(bare).unwrap().function.arguments["path"], "a.rs");
+        assert_eq!(
+            rescue_tool_call(bare).unwrap().function.arguments["path"],
+            "a.rs"
+        );
 
         assert!(rescue_tool_call("{\"name\":\"rm_rf\",\"arguments\":{}}").is_none());
         assert!(rescue_tool_call("Here is some prose, not a call.").is_none());

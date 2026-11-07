@@ -64,7 +64,11 @@ pub fn system_prompt(root: &Path) -> String {
 }
 
 fn git(root: &Path, args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new("git").args(args).current_dir(root).output().ok()?;
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -90,14 +94,23 @@ fn tree(root: &Path) -> String {
         }
         shown += 1;
         let indent = "  ".repeat(e.depth() - 1);
-        let slash = if e.file_type().map_or(false, |t| t.is_dir()) { "/" } else { "" };
-        out.push_str(&format!("{indent}{}{slash}\n", e.file_name().to_string_lossy()));
+        let slash = if e.file_type().map_or(false, |t| t.is_dir()) {
+            "/"
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "{indent}{}{slash}\n",
+            e.file_name().to_string_lossy()
+        ));
     }
     if shown == 0 {
         return "(empty)\n".into();
     }
     if more > 0 {
-        out.push_str(&format!("... +{more} more entries (use list_dir to explore)\n"));
+        out.push_str(&format!(
+            "... +{more} more entries (use list_dir to explore)\n"
+        ));
     }
     out
 }
@@ -142,7 +155,10 @@ pub struct Tracker {
 
 impl Default for Tracker {
     fn default() -> Self {
-        Self { ratio: 0.33, last_prompt: 0 }
+        Self {
+            ratio: 0.33,
+            last_prompt: 0,
+        }
     }
 }
 

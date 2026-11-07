@@ -23,7 +23,7 @@ pub struct ChatRequest<'a> {
     pub think: Option<bool>,
     #[serde(skip_serializing_if = "no_tools")]
     pub tools: &'a [Value],
-        pub keep_alive: &'static str,
+    pub keep_alive: &'static str,
 }
 
 #[derive(Serialize)]
@@ -84,11 +84,7 @@ impl Ollama {
             })?
             .error_for_status()?;
         let tags: Tags = resp.json().await.context("unexpected /api/tags response")?;
-        let want = if model.contains(':') {
-            model.to_string()
-        } else {
-            format!("{model}:latest")
-        };
+        let want = canonical_model(model);
         if !tags.models.iter().any(|m| m.name == want) {
             bail!("Model '{model}' isn't installed.\n  Run: ollama pull {model}");
         }
@@ -170,5 +166,64 @@ impl Ollama {
             },
             usage,
         })
+    }
+}
+
+pub fn canonical_model(model: &str) -> String {
+    if model.contains(':') {
+        model.to_string()
+    } else {
+        format!("{model}:latest")
+    }
+}
+
+#[derive(Deserialize)]
+struct Version {
+    version: String,
+}
+
+#[derive(Deserialize)]
+struct Show {
+    #[serde(default)]
+    capabilities: Vec<String>,
+}
+
+impl Ollama {
+    pub async fn version(&self) -> Result<String> {
+        let v: Version = self
+            .http
+            .get(format!("{}/api/version", self.host))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(v.version)
+    }
+
+    pub async fn installed_models(&self) -> Result<Vec<String>> {
+        let tags: Tags = self
+            .http
+            .get(format!("{}/api/tags", self.host))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(tags.models.into_iter().map(|m| m.name).collect())
+    }
+
+    /// Empty when the Ollama version is too old to report capabilities.
+    pub async fn capabilities(&self, model: &str) -> Result<Vec<String>> {
+        let s: Show = self
+            .http
+            .post(format!("{}/api/show", self.host))
+            .json(&serde_json::json!({ "model": model }))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(s.capabilities)
     }
 }

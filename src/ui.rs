@@ -54,7 +54,10 @@ pub fn reset_terminal() {
 }
 
 pub fn usage_line(u: &Usage, num_ctx: u32) {
-    let tps = u.tokens_per_sec.map(|t| format!(" · {t:.1} tok/s")).unwrap_or_default();
+    let tps = u
+        .tokens_per_sec
+        .map(|t| format!(" · {t:.1} tok/s"))
+        .unwrap_or_default();
     let pct = u.prompt_tokens * 100 / num_ctx.max(1) as u64;
     let color = if pct >= 80 { YELLOW } else { GREY };
     println!(
@@ -292,4 +295,16 @@ pub fn banner(model: &str, cwd: &str) {
         env!("CARGO_PKG_VERSION")
     );
     println!("{GREY}/help for commands · Ctrl-C cancels a response · Ctrl-D exits{RESET}\n");
+}
+
+pub fn check_ok(s: &str) {
+    println!("{GREEN}✓{RESET} {s}");
+}
+
+pub fn check_warn(s: &str) {
+    println!("{YELLOW}!{RESET} {s}");
+}
+
+pub fn check_fail(s: &str) {
+    println!("{RED}✗{RESET} {s}");
 }
