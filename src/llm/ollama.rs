@@ -29,6 +29,8 @@ pub struct ChatRequest<'a> {
 #[derive(Serialize)]
 pub struct Options {
     pub num_ctx: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
 }
 
 #[derive(Deserialize)]

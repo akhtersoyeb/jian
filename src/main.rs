@@ -6,6 +6,11 @@ mod llm;
 mod permissions;
 mod tools;
 mod ui;
+mod transcript;
+
+
+use serde_json::json;
+use transcript::Transcript;
 
 use anyhow::Result;
 use clap::Parser;
@@ -43,6 +48,19 @@ struct Cli {
 
     #[command(subcommand)]
     command: Option<Command>,
+
+    /// Force thinking on or off (true/false). Default: the model decides
+        #[arg(long, action = clap::ArgAction::Set, value_parser = clap::value_parser!(bool))]
+        think: Option<bool>,
+        /// Context window in tokens (overrides config)
+        #[arg(long)]
+        num_ctx: Option<u32>,
+        /// Sampling temperature (overrides config)
+        #[arg(long)]
+        temperature: Option<f32>,
+        /// Write this session's transcript (JSONL) to PATH instead of the default location
+        #[arg(long)]
+        transcript: Option<std::path::PathBuf>,
 }
 
 const HELP: &str = "\
@@ -110,6 +128,15 @@ async fn main() -> Result<()> {
     if let Some(h) = cli.host {
         cfg.host = config::normalize_host(&h);
     }
+    if let Some(t) = cli.think {
+            cfg.think = Some(t);
+        }
+        if let Some(n) = cli.num_ctx {
+            cfg.num_ctx = n;
+        }
+        if let Some(t) = cli.temperature {
+            cfg.temperature = Some(t);
+        }
 
     // `jian doctor` runs before anything else touches the terminal or Ollama.
     if cli.command.is_some() {
@@ -140,13 +167,30 @@ async fn main() -> Result<()> {
     let mut perms = permissions::Permissions::new(cli.yes);
     let mut tracker = context::Tracker::default();
 
+    let mut rec = Transcript::open(&cfg, &ctx.root, cli.transcript);
+        rec.log(
+            "session_start",
+            json!({
+                "version": env!("CARGO_PKG_VERSION"),
+                "mode": if final_out.is_some() { "one_shot" } else { "interactive" },
+                "model": cfg.model,
+                "host": cfg.host,
+                "num_ctx": cfg.num_ctx,
+                "think": cfg.think,
+                "temperature": cfg.temperature,
+                "cwd": ctx.root.display().to_string(),
+            }),
+        );
+        rec.message(&history[0]);
+
     // ---------- one-shot mode ----------
     if let (Some(prompt), Some(mut out)) = (cli.prompt, final_out) {
-        history.push(Message::user(prompt));
-        let result = tokio::select! {
-            r = agent::run_turn(&client, &cfg, &ctx, &mut perms, &mut tracker, &mut history) => Some(r),
-            _ = tokio::signal::ctrl_c() => None,
-        };
+        agent::push(&mut history, &mut rec, Message::user(prompt));
+               let result = tokio::select! {
+                   r = agent::run_turn(&client, &cfg, &ctx, &mut perms, &mut tracker, &mut rec, &mut history) => Some(r),
+                   _ = tokio::signal::ctrl_c() => None,
+               };
+               log_end(&mut rec, &result);
         match result {
             Some(Ok(())) => {
                 let answer = history
@@ -174,6 +218,9 @@ async fn main() -> Result<()> {
 
     // ---------- interactive mode ----------
     ui::banner(&cfg.model, &ctx.root.display().to_string());
+    if let Some(p) = &rec.path {
+            ui::info(&format!("transcript: {}", p.display()));
+        }
     let mut rl = DefaultEditor::new()?;
     let hist_path = dirs::data_dir().map(|d| d.join("jian").join("history.txt"));
     if let Some(p) = &hist_path {
@@ -205,6 +252,7 @@ async fn main() -> Result<()> {
             }
             "/clear" => {
                 history = vec![Message::system(context::system_prompt(&ctx.root))];
+                rec.log("clear", json!({}));
                 tracker = context::Tracker::default();
                 ui::info("Conversation cleared.");
                 continue;
@@ -226,12 +274,15 @@ async fn main() -> Result<()> {
             _ => {}
         }
 
-        history.push(Message::user(input));
+        rec.log("turn_start", json!({ "input_chars": input.len() }));
+                rec.ended = false;
+                agent::push(&mut history, &mut rec, Message::user(input));
 
-        let result = tokio::select! {
-            r = agent::run_turn(&client, &cfg, &ctx, &mut perms, &mut tracker, &mut history) => Some(r),
-            _ = tokio::signal::ctrl_c() => None,
-        };
+                let result = tokio::select! {
+                    r = agent::run_turn(&client, &cfg, &ctx, &mut perms, &mut tracker, &mut rec, &mut history) => Some(r),
+                    _ = tokio::signal::ctrl_c() => None,
+                };
+                log_end(&mut rec, &result);
 
         let ok = matches!(result, Some(Ok(())));
         match result {
@@ -259,4 +310,18 @@ async fn main() -> Result<()> {
         let _ = rl.save_history(p);
     }
     Ok(())
+}
+
+/// Record how a turn ended, unless the agent already did (done, step_limit, context_full, ...).
+fn log_end(rec: &mut Transcript, result: &Option<Result<()>>) {
+    if rec.ended {
+        return;
+    }
+    let ev = match result {
+        Some(Ok(())) => json!({ "status": "done" }),
+        Some(Err(e)) if e.downcast_ref::<agent::Cancelled>().is_some() => json!({ "status": "cancelled" }),
+        Some(Err(e)) => json!({ "status": "error", "error": format!("{e:#}") }),
+        None => json!({ "status": "cancelled" }),
+    };
+    rec.log("end", ev);
 }

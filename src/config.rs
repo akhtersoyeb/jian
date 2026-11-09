@@ -10,6 +10,10 @@ pub struct Config {
     pub num_ctx: u32,
     /// None = let the model decide. Some(false) disables thinking, Some(true) forces it.
     pub think: Option<bool>,
+    /// None = Ollama's default
+        pub temperature: Option<f32>,
+        /// Save a JSONL transcript of every session under the data dir
+        pub transcripts: bool,
 }
 
 impl Default for Config {
@@ -24,6 +28,8 @@ impl Default for Config {
                 .unwrap_or_else(|| "http://localhost:11434".into()),
             num_ctx: 16384,
             think: None,
+            temperature: None,
+                        transcripts: true,
         }
     }
 }
